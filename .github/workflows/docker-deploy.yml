@@ -1,0 +1,87 @@
+name: Build and Deploy Docker
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script_stop: true
+          envs: GITHUB_ACTOR
+          script: |
+            set -e
+            mkdir -p ${{ secrets.DEPLOY_TARGET_DIR }}
+            cd ${{ secrets.DEPLOY_TARGET_DIR }}
+
+            # Create docker-compose.yml if missing (expects .env on server)
+            if [ ! -f docker-compose.yml ]; then
+              cat > docker-compose.yml <<'EOF'
+version: "3.8"
+services:
+  bot:
+    image: ghcr.io/${{ github.repository }}:latest
+    container_name: china-telegram-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - bot_data:/app/data
+    command: ["python","bot.py"]
+volumes:
+  bot_data: {}
+EOF
+            fi
+
+            # Login to GHCR and deploy latest image
+            docker login ghcr.io -u $GITHUB_ACTOR -p ${{ secrets.GHCR_PAT }}
+            docker pull ghcr.io/${{ github.repository }}:latest
+            docker compose up -d
