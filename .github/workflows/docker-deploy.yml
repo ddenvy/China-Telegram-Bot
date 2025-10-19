@@ -65,20 +65,20 @@ jobs:
             # Create docker-compose.yml if missing (expects .env on server)
             if [ ! -f docker-compose.yml ]; then
               cat > docker-compose.yml <<'EOF'
-version: "3.8"
-services:
-  bot:
-    image: ghcr.io/${{ github.repository }}:latest
-    container_name: china-telegram-bot
-    restart: always
-    env_file:
-      - .env
-    volumes:
-      - bot_data:/app/data
-    command: ["python","bot.py"]
-volumes:
-  bot_data: {}
-EOF
+              version: "3.8"
+              services:
+                bot:
+                  image: ghcr.io/${{ github.repository }}:latest
+                  container_name: china-telegram-bot
+                  restart: always
+                  env_file:
+                    - .env
+                  volumes:
+                    - bot_data:/app/data
+                  command: ["python","bot.py"]
+              volumes:
+                bot_data: {}
+              EOF
             fi
 
             # Login to GHCR and deploy latest image
